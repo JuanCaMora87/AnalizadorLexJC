@@ -1,0 +1,6 @@
+# Entorno y archivos temporales
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log

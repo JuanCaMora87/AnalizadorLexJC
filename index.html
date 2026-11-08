@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JC ANALYZER – Lexical Error Detector | Autómatas I</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            },
+            dark: {
+              950: '#06090e',
+              900: '#0a0f18',
+              850: '#0f1726',
+              800: '#162035',
+              750: '#1c2944',
+              700: '#26375c',
+              600: '#374b78'
+            }
+          },
+          fontFamily: {
+            mono: ['Consolas', 'JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
+            sans: ['Inter', 'Segoe UI', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons (Local con fallback a CDN) -->
+  <script src="vendor/lucide.min.js"></script>
+  <script>
+    if (!window.lucide) {
+      document.write('<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- jsPDF y AutoTable (Local con fallback a CDN) -->
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- React & ReactDOM (Local con fallback a CDN) -->
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
+  <script src="vendor/babel.min.js"></script>
+
+  <style>
+    /* Scrollbars personalizadas estilo VS Code / Linear */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0f18;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #26375c;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4f46e5;
+    }
+
+    /* Resaltado suave y efectos de borde */
+    .glow-indigo {
+      box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.25);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.25);
+    }
+    .glow-rose {
+      box-shadow: 0 0 25px -5px rgba(244, 63, 94, 0.3);
+    }
+
+    /* Subrayado de error ondulado */
+    .wavy-error {
+      text-decoration: underline wavy #f43f5e 2px;
+      text-underline-offset: 3px;
+    }
+  </style>
+</head>
+<body class="bg-dark-950 text-slate-100 font-sans min-h-screen antialiased overflow-x-hidden selection:bg-brand-600 selection:text-white">
+
+  <div id="root"></div>
+
+  <!-- Módulos lógicos del Analizador -->
+  <script src="js/lexicalEngine.js?v=2.0.2"></script>
+  <script src="js/syntaxAdvisory.js?v=2.0.2"></script>
+  <script src="js/presets.js?v=2.0.2"></script>
+  <script src="js/pdfGenerator.js?v=2.0.2"></script>
+
+  <!-- Componente React Principal -->
+<script type="text/babel">
+/**
+ * ==============================================================================
+ * JC ANALYZER - MAIN REACT APPLICATION
+ * Autómatas I - Actividad 3
+ * ==============================================================================
+ */
+
+const { useState, useEffect, useRef, useMemo } = React;
+
+// Helper de Iconos SVG Profesionales (SaaS Developer UI)
+function Icon({ name, className = "w-4 h-4", size = 16 }) {
+  const icons = {
+    play: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+      </svg>
+    ),
+    trash: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+      </svg>
+    ),
+    copy: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+      </svg>
+    ),
+    download: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+    ),
+    code: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </svg>
+    ),
+    terminal: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    ),
+    layers: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polygon points="12 2 2 7 12 12 22 7 12 2" />
+        <polyline points="2 17 12 22 22 17" />
+        <polyline points="2 12 12 17 22 12" />
+      </svg>
+    ),
+    history: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+    bookOpen: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+      </svg>
+    ),
+    settings: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+      </svg>
+    ),
+    alertCircle: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+    ),
+    alertTriangle: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    ),
+    checkCircle: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    compare: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polyline points="16 3 21 3 21 8" />
+        <line x1="4" y1="20" x2="21" y2="3" />
+        <polyline points="21 16 21 21 16 21" />
+        <line x1="15" y1="15" x2="21" y2="21" />
+        <line x1="4" y1="4" x2="9" y2="9" />
+      </svg>
+    ),
+    search: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+    ),
+    filter: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+      </svg>
+    ),
+    check: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    ),
+    sparkles: (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+      </svg>
+    )
+  };
+
+  return icons[name] || icons.code;
+}
+
+// Colores e Insignias para cada Categoría de Token
+const CATEGORIA_BADGES = {
+  "Palabra reservada": "bg-purple-900/40 text-purple-300 border-purple-700/50",
+  "Identificador": "bg-blue-900/40 text-blue-300 border-blue-700/50",
+  "Número entero": "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
+  "Número decimal": "bg-emerald-900/40 text-emerald-300 border-emerald-700/50",
+  "Cadena de texto": "bg-amber-900/40 text-amber-300 border-amber-700/50",
+  "Operador aritmético": "bg-orange-900/40 text-orange-300 border-orange-700/50",
+  "Operador de comparación": "bg-pink-900/40 text-pink-300 border-pink-700/50",
+  "Operador de asignación": "bg-indigo-900/40 text-indigo-300 border-indigo-700/50",
+  "Operador lógico": "bg-teal-900/40 text-teal-300 border-teal-700/50",
+  "Operador bitwise": "bg-violet-900/40 text-violet-300 border-violet-700/50",
+  "Operador flecha": "bg-fuchsia-900/40 text-fuchsia-300 border-fuchsia-700/50",
+  "Delimitador": "bg-slate-800 text-slate-300 border-slate-700",
+  "Comentario": "bg-zinc-800/60 text-zinc-400 border-zinc-700/40"
+};
+
+function App() {
+  // Estado principal
+  const [codigo, setCodigo] = useState(PRESETS[0].codigo);
+  const [lenguaje, setLenguaje] = useState("python");
+  const [resultado, setResultado] = useState(() => analizarLexico(PRESETS[0].codigo, "python"));
+  const [diagnosticoSintactico, setDiagnosticoSintactico] = useState(() =>
+    evaluarSintaxisVsLexico(resultado.tokens, resultado.errores, "python")
+  );
+
+  // Navegación
+  const [seccionActiva, setSeccionActiva] = useState("editor"); // 'editor' | 'historial' | 'ejemplos' | 'comparador' | 'documentacion' | 'configuracion'
+  const [pestañaActiva, setPestañaActiva] = useState("tokens"); // 'tokens' | 'errores' | 'detalles' | 'comparacion'
+  
+  // Filtros de tabla
+  const [filtroCategoria, setFiltroCategoria] = useState("todos");
+  const [busquedaToken, setBusquedaToken] = useState("");
+  const [lineaResaltada, setLineaResaltada] = useState(null);
+
+  // Historial en LocalStorage
+  const [historial, setHistorial] = useState(() => {
+    try {
+      const guardado = localStorage.getItem("jc_analyzer_history");
+      return guardado ? JSON.parse(guardado) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Notificaciones Toast
+  const [toast, setToast] = useState(null);
+
+  const mostrarToast = (mensaje, tipo = "info") => {
+    setToast({ mensaje, tipo });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Ejecución del Análisis Léxico
+  const ejecutarAnalisis = (codigoAAnalizar = codigo, lang = lenguaje) => {
+    const res = analizarLexico(codigoAAnalizar, lang);
+    const diag = evaluarSintaxisVsLexico(res.tokens, res.errores, lang);
+    setResultado(res);
+    setDiagnosticoSintactico(diag);
+
+    // Guardar en historial
+    const nuevoRegistro = {
+      id: Date.now(),
+      fecha: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      fechaCompleta: new Date().toLocaleDateString("es-MX"),
+      lenguaje: lang,
+      codigoSnippet: codigoAAnalizar.slice(0, 80) + (codigoAAnalizar.length > 80 ? "..." : ""),
+      codigoCompleto: codigoAAnalizar,
+      totalTokens: res.totalTokens,
+      totalErrores: res.totalErrores,
+      duracionMs: res.duracionMs,
+      estado: res.estadoGeneral
+    };
+
+    setHistorial(prev => {
+      const actualizado = [nuevoRegistro, ...prev.slice(0, 24)];
+      try {
+        localStorage.setItem("jc_analyzer_history", JSON.stringify(actualizado));
+      } catch (e) {}
+      return actualizado;
+    });
+
+    mostrarToast(`Análisis completado en ${res.duracionMs} ms`, res.totalErrores === 0 ? "success" : "error");
+  };
+
+  // Cambio de lenguaje
+  const handleCambioLenguaje = (nuevoLang) => {
+    setLenguaje(nuevoLang);
+    ejecutarAnalisis(codigo, nuevoLang);
+  };
+
+  // Carga de preset
+  const handleCargarPreset = (preset) => {
+    setCodigo(preset.codigo);
+    setLenguaje(preset.lenguaje);
+    setSeccionActiva("editor");
+    ejecutarAnalisis(preset.codigo, preset.lenguaje);
+    mostrarToast(`Cargado: ${preset.titulo}`, "info");
+  };
+
+  // Limpiar editor
+  const handleLimpiar = () => {
+    setCodigo("");
+    setResultado({
+      lenguaje: CONFIG_LENGUAJES[lenguaje].nombre,
+      codigoOriginal: "",
+      tokens: [],
+      errores: [],
+      totalTokens: 0,
+      tokensValidos: 0,
+      totalErrores: 0,
+      conteoCategorias: {},
+      duracionMs: 0,
+      estadoGeneral: "Limpio",
+      reglasAplicadas: 12
+    });
+    setDiagnosticoSintactico({ tieneAdvertencias: false, advertencias: [] });
+    setLineaResaltada(null);
+    mostrarToast("Área de código y resultados restablecidos", "info");
+  };
+
+  // Copiar código al portapapeles
+  const handleCopiarCodigo = () => {
+    navigator.clipboard.writeText(codigo);
+    mostrarToast("Código copiado al portapapeles", "success");
+  };
+
+  // Generar Reporte PDF
+  const handleGenerarPDF = () => {
+    try {
+      generarReportePDF(resultado, diagnosticoSintactico.advertencias);
+      mostrarToast("Reporte PDF generado exitosamente", "success");
+    } catch (e) {
+      mostrarToast("Error al exportar PDF: " + e.message, "error");
+    }
+  };
+
+  // Atajo de teclado global: Ctrl + Enter para analizar
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        ejecutarAnalisis();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [codigo, lenguaje]);
+
+  // Lista de tokens filtrada
+  const tokensFiltrados = useMemo(() => {
+    return resultado.tokens.filter(t => {
+      const coincideCat = filtroCategoria === "todos" || t.categoria === filtroCategoria;
+      const coincideTexto = !busquedaToken || 
+        t.lexema.toLowerCase().includes(busquedaToken.toLowerCase()) || 
+        t.categoria.toLowerCase().includes(busquedaToken.toLowerCase());
+      return coincideCat && coincideTexto;
+    });
+  }, [resultado.tokens, filtroCategoria, busquedaToken]);
+
+  // Líneas del código para numeración y resaltado
+  const lineasArray = useMemo(() => codigo.split("\n"), [codigo]);
+
+  return (
+    <div className="flex h-screen bg-dark-950 text-slate-100 overflow-hidden font-sans">
+      
+      {/* ==================================================================== */}
+      {/* 1. BARRA LATERAL IZQUIERDA (SIDEBAR)                                 */}
+      {/* ==================================================================== */}
+      <aside className="w-64 bg-dark-900 border-r border-dark-800 flex flex-col justify-between select-none z-20 flex-shrink-0">
+        <div>
+          {/* Logo y Encabezado de Marca */}
+          <div className="p-4 border-b border-dark-800/80 flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-500 to-cyan-400 flex items-center justify-center font-mono font-black text-white text-lg shadow-lg shadow-brand-500/30">
+              JC
+            </div>
+            <div>
+              <div className="flex items-center space-x-1.5">
+                <span className="font-bold tracking-tight text-white text-sm">JC ANALYZER</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">PRO</span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium">Lexical Error Detector</p>
+            </div>
+          </div>
+
+          {/* Menú de Navegación Principal */}
+          <nav className="p-3 space-y-1">
+            <button
+              onClick={() => setSeccionActiva("editor")}
+              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "editor"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <Icon name="terminal" className="w-4 h-4" />
+              <span>Workspace / Editor</span>
+            </button>
+
+            <button
+              onClick={() => {
+                handleLimpiar();
+                setSeccionActiva("editor");
+              }}
+              className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-100 hover:bg-dark-800 transition-all"
+            >
+              <Icon name="code" className="w-4 h-4 text-cyan-400" />
+              <span>Nuevo Análisis</span>
+            </button>
+
+            <button
+              onClick={() => setSeccionActiva("ejemplos")}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "ejemplos"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Icon name="sparkles" className="w-4 h-4 text-amber-400" />
+                <span>Ejemplos de Rúbrica</span>
+              </div>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-dark-750 text-slate-300">
+                {PRESETS.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setSeccionActiva("comparador")}
+              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "comparador"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <Icon name="compare" className="w-4 h-4 text-purple-400" />
+              <span>Comparar 3 Lenguajes</span>
+            </button>
+
+            <button
+              onClick={() => setSeccionActiva("historial")}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "historial"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Icon name="history" className="w-4 h-4 text-emerald-400" />
+                <span>Historial de Análisis</span>
+              </div>
+              {historial.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-dark-750 text-slate-300">
+                  {historial.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setSeccionActiva("documentacion")}
+              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "documentacion"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <Icon name="bookOpen" className="w-4 h-4 text-blue-400" />
+              <span>Documentación & Teoría</span>
+            </button>
+
+            <button
+              onClick={() => setSeccionActiva("configuracion")}
+              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                seccionActiva === "configuracion"
+                  ? "bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-dark-800"
+              }`}
+            >
+              <Icon name="settings" className="w-4 h-4 text-slate-400" />
+              <span>Configuración</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Footer de la Barra Lateral con Metadata Académica */}
+        <div className="p-3 border-t border-dark-800/80 bg-dark-900/60 text-[11px] space-y-2">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="font-semibold text-slate-300">Autómatas I</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>AFD Activo</span>
+            </span>
+          </div>
+          <p className="text-slate-500 text-[10px] leading-tight">
+            Actividad 3: Reconocedor de tokens y discriminador de errores léxicos vs sintácticos.
+          </p>
+        </div>
+      </aside>
+
+      {/* ==================================================================== */}
+      {/* 2. ÁREA CENTRAL (TOP BAR + CONTENIDO PRINCIPAL)                      */}
+      {/* ==================================================================== */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        
+        {/* BARRA SUPERIOR (HEADER) */}
+        <header className="h-14 bg-dark-900 border-b border-dark-800 px-6 flex items-center justify-between flex-shrink-0 z-10">
+          {/* Breadcrumb / Título de Sección */}
+          <div className="flex items-center space-x-3">
+            <span className="text-xs font-medium text-slate-400">Autómatas I</span>
+            <span className="text-slate-600">/</span>
+            <h1 className="text-sm font-bold text-white capitalize tracking-wide flex items-center space-x-2">
+              <span>{seccionActiva}</span>
+              {seccionActiva === "editor" && (
+                <span className="text-slate-400 font-normal text-xs">({CONFIG_LENGUAJES[lenguaje].nombre})</span>
+              )}
+            </h1>
+          </div>
+
+          {/* Controles de Barra Superior */}
+          <div className="flex items-center space-x-3">
+            
+            {/* Selector de Lenguaje */}
+            <div className="flex items-center bg-dark-800 rounded-lg p-0.5 border border-dark-700">
+              <button
+                onClick={() => handleCambioLenguaje("python")}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  lenguaje === "python"
+                    ? "bg-brand-600 text-white shadow-sm font-bold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span>🐍</span>
+                <span>Python</span>
+              </button>
+              <button
+                onClick={() => handleCambioLenguaje("java")}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  lenguaje === "java"
+                    ? "bg-brand-600 text-white shadow-sm font-bold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span>☕</span>
+                <span>Java</span>
+              </button>
+              <button
+                onClick={() => handleCambioLenguaje("javascript")}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  lenguaje === "javascript"
+                    ? "bg-brand-600 text-white shadow-sm font-bold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <span>⚡</span>
+                <span>JavaScript</span>
+              </button>
+            </div>
+
+            {/* Indicador de Estado del Motor */}
+            <div className={`hidden sm:flex items-center space-x-2 px-2.5 py-1 rounded-md text-xs font-medium border ${
+              resultado.totalErrores === 0
+                ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
+                : "bg-rose-950/40 text-rose-400 border-rose-800/50 animate-pulse"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${resultado.totalErrores === 0 ? "bg-emerald-400" : "bg-rose-500"}`}></span>
+              <span>{resultado.totalErrores === 0 ? "0 Errores Léxicos" : `${resultado.totalErrores} Error(es)`}</span>
+            </div>
+
+            {/* Botón Principal: Ejecutar Análisis */}
+            <button
+              onClick={() => ejecutarAnalisis()}
+              className="flex items-center space-x-2 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-md shadow-brand-600/30 transition-all cursor-pointer active:scale-95"
+            >
+              <Icon name="play" className="w-3.5 h-3.5" />
+              <span>Ejecutar Análisis</span>
+              <kbd className="hidden md:inline px-1 py-0.5 text-[9px] font-mono bg-black/25 rounded border border-white/20">Ctrl+Enter</kbd>
+            </button>
+
+            {/* Botón Generar PDF */}
+            <button
+              onClick={handleGenerarPDF}
+              className="flex items-center space-x-1.5 bg-dark-800 hover:bg-dark-750 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold border border-dark-700 transition-all cursor-pointer"
+            >
+              <Icon name="download" className="w-3.5 h-3.5 text-brand-400" />
+              <span className="hidden md:inline">Reporte PDF</span>
+            </button>
+          </div>
+        </header>
+
+        {/* CONTENIDO PRINCIPAL DINÁMICO */}
+        <main className="flex-1 overflow-y-auto bg-dark-950 p-5 space-y-5">
+          
+          {/* VISTA 1: WORKSPACE / EDITOR LÉXICO PRINCIPAL */}
+          {seccionActiva === "editor" && (
+            <>
+              {/* ÁREA DE TRABAJO SUPERIOR: DOS COLUMNAS */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                
+                {/* COLUMNA IZQUIERDA: EDITOR DE CÓDIGO (7 de 12 cols) */}
+                <div className="lg:col-span-7 bg-dark-900 rounded-xl border border-dark-800 flex flex-col shadow-xl overflow-hidden">
+                  
+                  {/* Cabecera del Editor estilo VS Code */}
+                  <div className="h-10 bg-dark-850 border-b border-dark-800 px-4 flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex space-x-1.5 mr-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                      </div>
+                      <span className="text-xs font-mono font-semibold text-slate-300 flex items-center space-x-1">
+                        <Icon name="code" className="w-3.5 h-3.5 text-brand-400" />
+                        <span>source_code.{CONFIG_LENGUAJES[lenguaje].extension}</span>
+                      </span>
+                    </div>
+
+                    {/* Acciones del Editor */}
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] font-mono text-slate-500 mr-2">
+                        {lineasArray.length} líneas | {codigo.length} caracteres
+                      </span>
+                      <button
+                        onClick={handleCopiarCodigo}
+                        title="Copiar código"
+                        className="p-1.5 rounded hover:bg-dark-750 text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        <Icon name="copy" className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={handleLimpiar}
+                        title="Limpiar código"
+                        className="p-1.5 rounded hover:bg-dark-750 text-slate-400 hover:text-rose-400 transition-colors"
+                      >
+                        <Icon name="trash" className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cuerpo del Editor con Números de Línea */}
+                  <div className="relative flex-1 min-h-[260px] max-h-[380px] flex bg-dark-950 font-mono text-xs overflow-auto">
+                    {/* Gutter con Números de Línea */}
+                    <div className="w-12 py-3 bg-dark-900/80 text-right pr-3 select-none text-slate-600 border-r border-dark-800/80 font-mono leading-6 flex-shrink-0">
+                      {lineasArray.map((_, idx) => {
+                        const numLinea = idx + 1;
+                        const tieneError = resultado.errores.some(e => e.linea === numLinea);
+                        return (
+                          <div
+                            key={idx}
+                            className={`h-6 leading-6 ${tieneError ? "text-rose-400 font-bold bg-rose-950/40 -mr-3 pr-3" : ""}`}
+                          >
+                            {tieneError ? "⚠" : numLinea}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Área de Texto Editable */}
+                    <textarea
+                      value={codigo}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCodigo(val);
+                        // Auto-análisis en tiempo real
+                        const res = analizarLexico(val, lenguaje);
+                        const diag = evaluarSintaxisVsLexico(res.tokens, res.errores, lenguaje);
+                        setResultado(res);
+                        setDiagnosticoSintactico(diag);
+                      }}
+                      placeholder="// Escribe o pega tu código aquí..."
+                      spellCheck={false}
+                      className="flex-1 p-3 bg-transparent text-slate-100 font-mono leading-6 outline-none resize-none overflow-x-auto whitespace-pre font-normal selection:bg-brand-600 selection:text-white"
+                      style={{ tabSize: 4 }}
+                    />
+                  </div>
+
+                  {/* Barra inferior del Editor con presets rápidos */}
+                  <div className="h-9 bg-dark-850 border-t border-dark-800 px-4 flex items-center justify-between text-xs text-slate-400">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] font-semibold text-slate-500">Casos rápidos:</span>
+                      <button
+                        onClick={() => handleCargarPreset(PRESETS[0])}
+                        className="px-2 py-0.5 rounded text-[11px] bg-dark-750 hover:bg-dark-700 text-slate-300 transition-colors"
+                      >
+                        Caso 1 (OK)
+                      </button>
+                      <button
+                        onClick={() => handleCargarPreset(PRESETS[1])}
+                        className="px-2 py-0.5 rounded text-[11px] bg-dark-750 hover:bg-dark-700 text-rose-300 transition-colors"
+                      >
+                        Caso 2 (@)
+                      </button>
+                      <button
+                        onClick={() => handleCargarPreset(PRESETS[2])}
+                        className="px-2 py-0.5 rounded text-[11px] bg-dark-750 hover:bg-dark-700 text-amber-300 transition-colors"
+                      >
+                        Caso 3 (20 + * 5;)
+                      </button>
+                    </div>
+
+                    <div className="flex items-center space-x-2 text-[11px]">
+                      <span className="w-2 h-2 rounded-full bg-brand-400"></span>
+                      <span>UTF-8</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* COLUMNA DERECHA: TARJETAS DE RESULTADOS Y MÉTRICAS (5 de 12 cols) */}
+                <div className="lg:col-span-5 flex flex-col space-y-4">
+                  
+                  {/* TARJETAS ESTADÍSTICAS COMPACTAS (GRID 2x2) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Total Tokens */}
+                    <div className="bg-dark-900 border border-dark-800 rounded-xl p-3.5 flex flex-col justify-between shadow-lg">
+                      <div className="flex items-center justify-between text-slate-400 mb-2">
+                        <span className="text-xs font-semibold">Total Tokens</span>
+                        <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          <Icon name="layers" className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline space-x-2">
+                        <span className="text-2xl font-mono font-bold text-white">{resultado.totalTokens}</span>
+                        <span className="text-[11px] text-slate-400">reconocidos</span>
+                      </div>
+                    </div>
+
+                    {/* Tokens Válidos */}
+                    <div className="bg-dark-900 border border-dark-800 rounded-xl p-3.5 flex flex-col justify-between shadow-lg">
+                      <div className="flex items-center justify-between text-slate-400 mb-2">
+                        <span className="text-xs font-semibold">Tokens Válidos</span>
+                        <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <Icon name="checkCircle" className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline space-x-2">
+                        <span className="text-2xl font-mono font-bold text-emerald-400">{resultado.tokensValidos}</span>
+                        <span className="text-[11px] text-slate-400">en gramática</span>
+                      </div>
+                    </div>
+
+                    {/* Errores Léxicos */}
+                    <div className="bg-dark-900 border border-dark-800 rounded-xl p-3.5 flex flex-col justify-between shadow-lg">
+                      <div className="flex items-center justify-between text-slate-400 mb-2">
+                        <span className="text-xs font-semibold">Errores Léxicos</span>
+                        <div className={`p-1.5 rounded-lg border ${
+                          resultado.totalErrores > 0
+                            ? "bg-rose-500/20 text-rose-400 border-rose-500/30"
+                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        }`}>
+                          <Icon name="alertCircle" className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline space-x-2">
+                        <span className={`text-2xl font-mono font-bold ${resultado.totalErrores > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {resultado.totalErrores}
+                        </span>
+                        <span className="text-[11px] text-slate-400">detectados</span>
+                      </div>
+                    </div>
+
+                    {/* Tiempo de Análisis Real */}
+                    <div className="bg-dark-900 border border-dark-800 rounded-xl p-3.5 flex flex-col justify-between shadow-lg">
+                      <div className="flex items-center justify-between text-slate-400 mb-2">
+                        <span className="text-xs font-semibold">Tiempo Real</span>
+                        <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <Icon name="history" className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline space-x-1">
+                        <span className="text-2xl font-mono font-bold text-purple-300">{resultado.duracionMs}</span>
+                        <span className="text-xs font-mono text-slate-400">ms</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ESTADO GENERAL DEL ANÁLISIS */}
+                  <div className={`p-4 rounded-xl border flex items-start space-x-3 ${
+                    resultado.totalErrores === 0
+                      ? "bg-emerald-950/25 border-emerald-800/40 text-emerald-300"
+                      : "bg-rose-950/30 border-rose-800/50 text-rose-300"
+                  }`}>
+                    <div className={`p-2 rounded-lg mt-0.5 ${
+                      resultado.totalErrores === 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                    }`}>
+                      <Icon name={resultado.totalErrores === 0 ? "checkCircle" : "alertCircle"} className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider">
+                        {resultado.totalErrores === 0 ? "Análisis Léxico Exitoso" : "Inconsistencias Léxicas Detectadas"}
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                        {resultado.totalErrores === 0
+                          ? `Todos los ${resultado.totalTokens} componentes fueron clasificados correctamente en las categorías formales del lenguaje ${resultado.lenguaje}.`
+                          : `Se encontraron ${resultado.totalErrores} lexema(s) que no pertenecen al alfabeto válido. El escáner continuó el análisis sin abortar.`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* AVISO EDUCATIVO DE SINTAXIS VS LÉXICO (CASO 3 RÚBRICA) */}
+                  {diagnosticoSintactico.tieneAdvertencias && (
+                    <div className="p-4 rounded-xl border bg-amber-950/30 border-amber-800/60 text-amber-200 shadow-lg">
+                      <div className="flex items-center space-x-2 text-amber-400 mb-1.5">
+                        <Icon name="alertTriangle" className="w-4 h-4" />
+                        <span className="text-xs font-bold uppercase tracking-wider">
+                          Distinción Teórica: Error Sintáctico (No Léxico)
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-200 leading-relaxed">
+                        {diagnosticoSintactico.advertencias[0].mensajeFormal}
+                      </p>
+                      <div className="mt-2.5 pt-2.5 border-t border-amber-800/40 text-[11px] text-amber-300/90 leading-normal">
+                        <strong>Principio de Autómatas:</strong> El <em>Analizador Léxico</em> solo valida que cada palabra exista en el vocabulario. Es el <em>Analizador Sintáctico</em> quien valida el orden gramatical.
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+              {/* PANEL INFERIOR DE RESULTADOS DETALLADOS (PESTAÑAS) */}
+              <div className="bg-dark-900 rounded-xl border border-dark-800 shadow-xl overflow-hidden">
+                
+                {/* Cabecera de Pestañas */}
+                <div className="flex items-center justify-between border-b border-dark-800 bg-dark-850 px-4">
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => setPestañaActiva("tokens")}
+                      className={`flex items-center space-x-2 py-3 px-4 border-b-2 text-xs font-bold transition-all ${
+                        pestañaActiva === "tokens"
+                          ? "border-brand-500 text-white bg-dark-900"
+                          : "border-transparent text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon name="layers" className="w-3.5 h-3.5" />
+                      <span>Tokens</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-dark-750 text-slate-300 font-mono">
+                        {resultado.tokens.length}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => setPestañaActiva("errores")}
+                      className={`flex items-center space-x-2 py-3 px-4 border-b-2 text-xs font-bold transition-all ${
+                        pestañaActiva === "errores"
+                          ? "border-rose-500 text-white bg-dark-900"
+                          : "border-transparent text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon name="alertCircle" className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Errores Léxicos</span>
+                      {resultado.totalErrores > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-mono font-bold">
+                          {resultado.totalErrores}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setPestañaActiva("detalles")}
+                      className={`flex items-center space-x-2 py-3 px-4 border-b-2 text-xs font-bold transition-all ${
+                        pestañaActiva === "detalles"
+                          ? "border-brand-500 text-white bg-dark-900"
+                          : "border-transparent text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon name="terminal" className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Detalles</span>
+                    </button>
+
+                    <button
+                      onClick={() => setPestañaActiva("comparacion")}
+                      className={`flex items-center space-x-2 py-3 px-4 border-b-2 text-xs font-bold transition-all ${
+                        pestañaActiva === "comparacion"
+                          ? "border-brand-500 text-white bg-dark-900"
+                          : "border-transparent text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon name="compare" className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Comparación</span>
+                    </button>
+                  </div>
+
+                  {/* Búsqueda y Filtro de Tokens (Solo visible en pestaña de tokens) */}
+                  {pestañaActiva === "tokens" && (
+                    <div className="flex items-center space-x-2">
+                      {/* Búsqueda */}
+                      <div className="relative">
+                        <Icon name="search" className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                        <input
+                          type="text"
+                          placeholder="Buscar lexema..."
+                          value={busquedaToken}
+                          onChange={(e) => setBusquedaToken(e.target.value)}
+                          className="bg-dark-800 border border-dark-700 text-xs rounded-lg pl-8 pr-3 py-1.5 text-slate-200 placeholder-slate-500 outline-none focus:border-brand-500 w-36 lg:w-48"
+                        />
+                      </div>
+
+                      {/* Selector de Categoría */}
+                      <select
+                        value={filtroCategoria}
+                        onChange={(e) => setFiltroCategoria(e.target.value)}
+                        className="bg-dark-800 border border-dark-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-200 outline-none focus:border-brand-500 cursor-pointer"
+                      >
+                        <option value="todos">Todas las Categorías</option>
+                        {Object.keys(resultado.conteoCategorias).map(cat => (
+                          <option key={cat} value={cat}>{cat} ({resultado.conteoCategorias[cat]})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* CONTENIDO DE PESTAÑAS */}
+                <div className="p-4">
+                  
+                  {/* PESTAÑA 1: TABLA DE TOKENS */}
+                  {pestañaActiva === "tokens" && (
+                    <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
+                      {tokensFiltrados.length === 0 ? (
+                        <div className="py-12 text-center text-slate-500 text-xs">
+                          No se encontraron tokens que coincidan con los criterios de búsqueda.
+                        </div>
+                      ) : (
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-dark-850 text-slate-400 uppercase text-[10px] font-bold sticky top-0 border-b border-dark-800">
+                            <tr>
+                              <th className="py-2.5 px-3 w-16 text-center">No.</th>
+                              <th className="py-2.5 px-4">Lexema</th>
+                              <th className="py-2.5 px-4">Categoría</th>
+                              <th className="py-2.5 px-3 text-center">Línea</th>
+                              <th className="py-2.5 px-3 text-center">Columna</th>
+                              <th className="py-2.5 px-3 text-center">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-dark-800/60 font-mono">
+                            {tokensFiltrados.map((token) => (
+                              <tr
+                                key={token.numero}
+                                className="hover:bg-dark-800/50 transition-colors group"
+                              >
+                                <td className="py-2 px-3 text-center text-slate-500 font-bold">
+                                  {token.numero}
+                                </td>
+                                <td className="py-2 px-4 font-bold text-white max-w-xs truncate">
+                                  <span className="px-2 py-0.5 rounded bg-dark-950 border border-dark-800 text-cyan-300">
+                                    {token.lexema}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-4 font-sans font-medium">
+                                  <span className={`px-2 py-0.5 rounded-md border text-[11px] font-semibold inline-block ${
+                                    CATEGORIA_BADGES[token.categoria] || "bg-dark-800 text-slate-300"
+                                  }`}>
+                                    {token.categoria}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-center text-slate-400">
+                                  {token.linea}
+                                </td>
+                                <td className="py-2 px-3 text-center text-slate-400">
+                                  {token.columna}
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 font-sans font-bold border border-emerald-500/20">
+                                    {token.estado}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* PESTAÑA 2: ERRORES LÉXICOS */}
+                  {pestañaActiva === "errores" && (
+                    <div className="space-y-3">
+                      {resultado.errores.length === 0 ? (
+                        <div className="py-12 text-center">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                            <Icon name="checkCircle" className="w-6 h-6" />
+                          </div>
+                          <h4 className="text-sm font-bold text-white">¡Cero errores léxicos!</h4>
+                          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                            Todos los caracteres analizados cumplen con la especificación formal del lenguaje {resultado.lenguaje}.
+                          </p>
+                        </div>
+                      ) : (
+                        resultado.errores.map((err) => (
+                          <div
+                            key={err.numero}
+                            className="p-4 rounded-xl bg-dark-950 border border-rose-900/40 hover:border-rose-500/60 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md"
+                          >
+                            <div className="flex items-start space-x-3">
+                              <span className="px-2 py-1 rounded bg-rose-500/20 text-rose-400 font-mono font-bold text-xs border border-rose-500/30">
+                                Error #{err.numero}
+                              </span>
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs font-bold text-white">{err.tipo}</span>
+                                  <span className="text-slate-400 text-xs">•</span>
+                                  <span className="text-xs text-amber-400 font-mono">
+                                    Línea {err.linea}, Columna {err.columna}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-300 mt-1">{err.descripcion}</p>
+                                <p className="text-[11px] text-slate-400 mt-1.5 italic bg-dark-900 p-2 rounded border border-dark-800">
+                                  <strong>Fundamento Teórico:</strong> {err.explicacion}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex-shrink-0">
+                              <span className="px-3 py-1.5 rounded-lg bg-rose-950 text-rose-300 border border-rose-700/60 font-mono font-bold text-xs inline-block">
+                                '{err.lexema}'
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* PESTAÑA 3: DETALLES TÉCNICOS */}
+                  {pestañaActiva === "detalles" && (
+                    <div className="space-y-4 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-3 rounded-lg bg-dark-950 border border-dark-800">
+                          <span className="text-slate-400 block mb-1 font-semibold">Lenguaje de Gramática</span>
+                          <span className="text-sm font-bold text-white">{resultado.lenguaje}</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-dark-950 border border-dark-800">
+                          <span className="text-slate-400 block mb-1 font-semibold">Tiempo de Escaneo (Real)</span>
+                          <span className="text-sm font-bold text-purple-400 font-mono">{resultado.duracionMs} ms</span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-dark-950 border border-dark-800">
+                          <span className="text-slate-400 block mb-1 font-semibold">Reglas Léxicas Compiladas</span>
+                          <span className="text-sm font-bold text-cyan-400 font-mono">{resultado.reglasAplicadas} Autómatas</span>
+                        </div>
+                      </div>
+
+                      {/* Desglose de Categorías */}
+                      <div className="p-4 rounded-lg bg-dark-950 border border-dark-800">
+                        <h4 className="font-bold text-slate-200 mb-3 text-xs uppercase tracking-wider">
+                          Distribución de Tokens por Categoría
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                          {Object.keys(resultado.conteoCategorias).map(cat => (
+                            <div key={cat} className="flex items-center justify-between p-2 rounded bg-dark-900 border border-dark-800/80">
+                              <span className="text-slate-300 font-medium">{cat}</span>
+                              <span className="font-mono font-bold text-brand-400 bg-brand-500/10 px-1.5 py-0.5 rounded text-[11px]">
+                                {resultado.conteoCategorias[cat]}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PESTAÑA 4: COMPARACIÓN RÁPIDA DE LENGUAJES */}
+                  {pestañaActiva === "comparacion" && (
+                    <div className="space-y-4">
+                      <div className="p-3 bg-dark-950 rounded-lg border border-dark-800 text-xs text-slate-400">
+                        Inspecciona en tiempo real cómo el código actual se comportaría en los tres compiladores:
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {["python", "java", "javascript"].map((lang) => {
+                          const res = analizarLexico(codigo, lang);
+                          return (
+                            <div key={lang} className="p-3.5 rounded-xl bg-dark-950 border border-dark-800 flex flex-col justify-between shadow-lg">
+                              <div>
+                                <div className="flex items-center justify-between mb-2 pb-2 border-b border-dark-800">
+                                  <span className="font-bold text-white text-xs capitalize flex items-center space-x-1">
+                                    <span>{lang === "python" ? "🐍" : lang === "java" ? "☕" : "⚡"}</span>
+                                    <span>{CONFIG_LENGUAJES[lang].nombre}</span>
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    res.totalErrores === 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                                  }`}>
+                                    {res.totalErrores === 0 ? "0 Errores" : `${res.totalErrores} Error(es)`}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 space-y-1 mb-3">
+                                  <div className="flex justify-between">
+                                    <span>Tokens reconocidos:</span>
+                                    <strong className="text-white font-mono">{res.totalTokens}</strong>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Tiempo de escaneo:</span>
+                                    <strong className="text-purple-300 font-mono">{res.duracionMs} ms</strong>
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleCambioLenguaje(lang)}
+                                className={`w-full py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                  lenguaje === lang
+                                    ? "bg-brand-600 text-white font-bold shadow-md shadow-brand-600/30"
+                                    : "bg-dark-800 text-slate-300 hover:text-white hover:bg-dark-750"
+                                }`}
+                              >
+                                {lenguaje === lang ? "✓ Lenguaje Seleccionado" : `Cambiar a ${CONFIG_LENGUAJES[lang].nombre}`}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* VISTA 2: EJEMPLOS DE RÚBRICA */}
+          {seccionActiva === "ejemplos" && (
+            <div className="space-y-4 max-w-5xl mx-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Casos de Prueba de la Actividad</h2>
+                  <p className="text-xs text-slate-400">Selecciona cualquiera de los casos obligatorios para cargarlo directamente en el editor.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {PRESETS.map((p) => (
+                  <div
+                    key={p.id}
+                    className="p-4 rounded-xl bg-dark-900 border border-dark-800 hover:border-brand-500 transition-all flex flex-col justify-between shadow-lg"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-brand-600/20 text-brand-300 border border-brand-500/30">
+                          {p.lenguaje.toUpperCase()}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-800 text-slate-300">
+                          {p.badge}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-white text-sm">{p.titulo}</h3>
+                      <p className="text-xs text-slate-400 mt-1 mb-3">{p.descripcion}</p>
+                      <pre className="p-2.5 rounded bg-dark-950 font-mono text-[11px] text-cyan-300 overflow-x-auto border border-dark-800/80 max-h-28">
+                        {p.codigo}
+                      </pre>
+                    </div>
+
+                    <button
+                      onClick={() => handleCargarPreset(p)}
+                      className="mt-4 w-full py-2 rounded-lg bg-dark-800 hover:bg-brand-600 text-slate-200 hover:text-white font-semibold text-xs transition-colors flex items-center justify-center space-x-1.5"
+                    >
+                      <Icon name="play" className="w-3.5 h-3.5" />
+                      <span>Cargar en el Editor</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* VISTA 3: COMPARADOR 3 LENGUAJES */}
+          {seccionActiva === "comparador" && (
+            <div className="space-y-4 max-w-6xl mx-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Comparación Léxica Multi-Lenguaje</h2>
+                  <p className="text-xs text-slate-400">
+                    Evalúa el mismo código en Python, Java y JavaScript para inspeccionar divergencias en palabras reservadas y operadores.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSeccionActiva("editor")}
+                  className="px-3 py-1.5 rounded-lg bg-dark-800 text-xs font-semibold text-slate-300 hover:text-white"
+                >
+                  Volver al Editor
+                </button>
+              </div>
+
+              {/* 3 Paneles de Lenguajes */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {["python", "java", "javascript"].map((lang) => {
+                  const res = analizarLexico(codigo, lang);
+                  return (
+                    <div key={lang} className="bg-dark-900 rounded-xl border border-dark-800 p-4 flex flex-col justify-between shadow-xl">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-dark-800 mb-3">
+                          <span className="font-bold text-sm text-white capitalize flex items-center space-x-1.5">
+                            <span>{lang === "python" ? "🐍" : lang === "java" ? "☕" : "⚡"}</span>
+                            <span>{CONFIG_LENGUAJES[lang].nombre}</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            res.totalErrores === 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                          }`}>
+                            {res.totalErrores === 0 ? "0 Errores" : `${res.totalErrores} Error(es)`}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 mb-3">
+                          <div className="flex justify-between text-xs text-slate-400">
+                            <span>Tokens identificados:</span>
+                            <span className="font-mono font-bold text-white">{res.totalTokens}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-slate-400">
+                            <span>Tiempo de ejecución:</span>
+                            <span className="font-mono text-purple-300">{res.duracionMs} ms</span>
+                          </div>
+                        </div>
+
+                        <div className="max-h-48 overflow-y-auto font-mono text-[11px] p-2 bg-dark-950 rounded border border-dark-800">
+                          {res.tokens.slice(0, 10).map(t => (
+                            <div key={t.numero} className="flex justify-between py-0.5 text-slate-300">
+                              <span className="text-cyan-300">{t.lexema}</span>
+                              <span className="text-slate-500 text-[10px]">{t.categoria}</span>
+                            </div>
+                          ))}
+                          {res.tokens.length > 10 && (
+                            <div className="text-[10px] text-slate-500 text-center pt-1">+ {res.tokens.length - 10} tokens más...</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setLenguaje(lang);
+                          setSeccionActiva("editor");
+                        }}
+                        className="mt-4 w-full py-1.5 rounded-lg bg-dark-800 hover:bg-brand-600 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                      >
+                        Abrir en este lenguaje
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* VISTA 4: HISTORIAL DE ANÁLISIS */}
+          {seccionActiva === "historial" && (
+            <div className="space-y-4 max-w-5xl mx-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Historial de Análisis</h2>
+                  <p className="text-xs text-slate-400">Consultas recientes persistidas localmente en este navegador.</p>
+                </div>
+                {historial.length > 0 && (
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem("jc_analyzer_history");
+                      setHistorial([]);
+                      mostrarToast("Historial eliminado", "info");
+                    }}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 text-xs font-semibold border border-dark-700"
+                  >
+                    <Icon name="trash" className="w-3.5 h-3.5" />
+                    <span>Borrar Historial</span>
+                  </button>
+                )}
+              </div>
+
+              {historial.length === 0 ? (
+                <div className="py-16 text-center bg-dark-900 rounded-xl border border-dark-800">
+                  <Icon name="history" className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-300">No hay análisis en el historial</p>
+                  <p className="text-xs text-slate-500 mt-1">Los análisis ejecutados se guardarán automáticamente aquí.</p>
+                </div>
+              ) : (
+                <div className="bg-dark-900 rounded-xl border border-dark-800 overflow-hidden shadow-xl">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-dark-850 text-slate-400 uppercase text-[10px] font-bold border-b border-dark-800">
+                      <tr>
+                        <th className="py-2.5 px-4">Hora</th>
+                        <th className="py-2.5 px-4">Lenguaje</th>
+                        <th className="py-2.5 px-4">Código Muestra</th>
+                        <th className="py-2.5 px-3 text-center">Tokens</th>
+                        <th className="py-2.5 px-3 text-center">Errores</th>
+                        <th className="py-2.5 px-4 text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-dark-800 font-mono">
+                      {historial.map((item) => (
+                        <tr key={item.id} className="hover:bg-dark-800/40">
+                          <td className="py-2.5 px-4 text-slate-400">{item.fecha}</td>
+                          <td className="py-2.5 px-4 font-sans font-bold capitalize text-slate-200">
+                            {item.lenguaje}
+                          </td>
+                          <td className="py-2.5 px-4 text-slate-300 truncate max-w-xs">{item.codigoSnippet}</td>
+                          <td className="py-2.5 px-3 text-center font-bold text-blue-400">{item.totalTokens}</td>
+                          <td className="py-2.5 px-3 text-center font-bold">
+                            <span className={item.totalErrores > 0 ? "text-rose-400" : "text-emerald-400"}>
+                              {item.totalErrores}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setCodigo(item.codigoCompleto);
+                                setLenguaje(item.lenguaje);
+                                setSeccionActiva("editor");
+                                ejecutarAnalisis(item.codigoCompleto, item.lenguaje);
+                              }}
+                              className="px-2.5 py-1 rounded bg-brand-600 hover:bg-brand-500 text-white font-sans font-bold text-xs"
+                            >
+                              Restaurar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VISTA 5: DOCUMENTACIÓN & TEORÍA AUTÓMATAS I */}
+          {seccionActiva === "documentacion" && (
+            <div className="space-y-6 max-w-4xl mx-auto text-slate-300 leading-relaxed text-xs">
+              <div>
+                <h2 className="text-xl font-bold text-white">Manual Teórico: Análisis Léxico en Compiladores</h2>
+                <p className="text-xs text-slate-400 mt-1">Autómatas I – Fundamentos y Diferenciación de Errores</p>
+              </div>
+
+              {/* Tarjeta 1: ¿Qué es el Análisis Léxico? */}
+              <div className="p-5 rounded-xl bg-dark-900 border border-dark-800 space-y-2">
+                <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider">1. La Primera Fase del Compilador (Scanner)</h3>
+                <p>
+                  El <strong>Analizador Léxico (Escáner)</strong> lee el código fuente carácter por carácter de izquierda a derecha. Su función es agrupar la secuencia de caracteres en unidades mínimas con significado llamadas <strong>Lexemas</strong>, y asociarles un tipo formal llamado <strong>Token</strong>.
+                </p>
+              </div>
+
+              {/* Tarjeta 2: Lexemas vs Tokens */}
+              <div className="p-5 rounded-xl bg-dark-900 border border-dark-800 space-y-2">
+                <h3 className="text-sm font-bold text-brand-400 uppercase tracking-wider">2. Lexema vs Token</h3>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>Lexema:</strong> Es la cadena concreta de caracteres en el código fuente (ejemplo: <code className="text-cyan-300 font-mono">edad</code>, <code className="text-cyan-300 font-mono">15.50</code>, <code className="text-cyan-300 font-mono">while</code>).</li>
+                  <li><strong>Token:</strong> Es el símbolo terminal abstracto que representa esa categoría (ejemplo: <code className="text-purple-300 font-mono">IDENTIFICADOR</code>, <code className="text-purple-300 font-mono">NUMERO_DECIMAL</code>, <code className="text-purple-300 font-mono">PALABRA_RESERVADA</code>).</li>
+                </ul>
+              </div>
+
+              {/* Tarjeta 3: Error Léxico vs Error Sintáctico (CRUCIAL RÚBRICA) */}
+              <div className="p-5 rounded-xl bg-dark-900 border border-amber-800/60 bg-amber-950/10 space-y-3">
+                <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider">3. Error Léxico vs Error Sintáctico (Caso Obligatorio '20 + * 5;')</h3>
+                <p>
+                  Uno de los errores conceptuales más frecuentes en la teoría de compiladores es confundir un error sintáctico con un error léxico:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                  <div className="p-3 bg-dark-950 rounded border border-dark-800">
+                    <span className="font-bold text-rose-400 block mb-1">Error Léxico (Scanner)</span>
+                    <p className="text-[11px] text-slate-400">
+                      Ocurre cuando aparece un carácter o símbolo que <strong>no pertenece al alfabeto del lenguaje</strong> (ejemplo: <code className="text-rose-300 font-mono">@</code> en <code className="text-rose-300 font-mono">10 @ 5</code>) o cuando una cadena de texto no se cierra.
+                    </p>
+                  </div>
+                  <div className="p-3 bg-dark-950 rounded border border-dark-800">
+                    <span className="font-bold text-amber-400 block mb-1">Error Sintáctico (Parser)</span>
+                    <p className="text-[11px] text-slate-400">
+                      Ocurre cuando todos los tokens son válidos, pero <strong>su ordenamiento viola la gramática</strong>. En <code className="text-amber-300 font-mono">20 + * 5;</code>, los cinco tokens son 100% válidos individualmente, pero violan la estructura de operadores binarios.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VISTA 6: CONFIGURACIÓN */}
+          {seccionActiva === "configuracion" && (
+            <div className="space-y-6 max-w-3xl mx-auto text-xs">
+              <div>
+                <h2 className="text-xl font-bold text-white">Configuración del Entorno</h2>
+                <p className="text-xs text-slate-400 mt-1">Parámetros de escaneo y preferencias visuales del analizador léxico.</p>
+              </div>
+
+              <div className="p-5 rounded-xl bg-dark-900 border border-dark-800 space-y-4">
+                <h3 className="text-sm font-bold text-white">Opciones del Motor Léxico</h3>
+                
+                <div className="flex items-center justify-between py-2 border-b border-dark-800">
+                  <div>
+                    <span className="font-bold text-slate-200 block">Análisis en tiempo real</span>
+                    <span className="text-slate-400 text-[11px]">Ejecuta el escáner automáticamente mientras se escribe en el editor.</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    Habilitado
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-b border-dark-800">
+                  <div>
+                    <span className="font-bold text-slate-200 block">Modo estricto de Autómatas</span>
+                    <span className="text-slate-400 text-[11px]">Prioridad de operadores multicarácter y detección preventiva de errores.</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-brand-500/20 text-brand-400 border border-brand-500/30">
+                    Activo (12 Reglas)
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <span className="font-bold text-slate-200 block">Medición de Rendimiento</span>
+                    <span className="text-slate-400 text-[11px]">Cálculo en microsegundos de la función de transición con performance.now().</span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    Precisión Alta
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-5 rounded-xl bg-dark-900 border border-dark-800 space-y-2">
+                <h3 className="text-sm font-bold text-white">Acerca de la Aplicación</h3>
+                <p className="text-slate-400">
+                  <strong>JC ANALYZER – LEXICAL ERROR DETECTOR</strong> v2.0 PRO<br />
+                  Materia: <strong>Autómatas I</strong> (Actividad 3)<br />
+                  Arquitectura: Component-based SPA en React + Tailwind CSS + Motor Léxico puro en JavaScript.
+                </p>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+
+      {/* NOTIFICACIÓN TOAST FLOTANTE */}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl shadow-2xl border text-xs font-bold flex items-center space-x-2 transition-all animate-bounce ${
+          toast.tipo === "success"
+            ? "bg-emerald-950 text-emerald-200 border-emerald-600"
+            : toast.tipo === "error"
+            ? "bg-rose-950 text-rose-200 border-rose-600"
+            : "bg-dark-800 text-slate-100 border-dark-700"
+        }`}>
+          <Icon name={toast.tipo === "success" ? "checkCircle" : toast.tipo === "error" ? "alertCircle" : "info"} className="w-4 h-4" />
+          <span>{toast.mensaje}</span>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// Montar la aplicación React en el DOM
+const contenedor = document.getElementById("root");
+if (ReactDOM.createRoot) {
+  const root = ReactDOM.createRoot(contenedor);
+  root.render(<App />);
+} else {
+  ReactDOM.render(<App />, contenedor);
+}
+
+  </script>
+</body>
+</html>
